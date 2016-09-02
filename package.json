@@ -1,0 +1,31 @@
+{ "name": "readfile-cache-pmb",
+  "version": "0.1.0",
+  "description": "Cache buffers from fs.readFile, deliver as needed, handy additional encodings.",
+  "keywords": [
+    "fs", "readfile", "fs.readFile", "read file",
+    "Buffer", "buffer", "encoding",
+    "JSON", "json", "strip BOM",
+    "once"
+  ],
+
+  "author": "M.K. (https://github.com/mk-pmb)",
+  "homepage": "https://github.com/mk-pmb/readfile-cache-pmb-js#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mk-pmb/readfile-cache-pmb-js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mk-pmb/readfile-cache-pmb-js/issues"
+  },
+
+  "private": false, "license": "ISC",
+
+  "main": "rfc.js",
+  "scripts": { "test": "nodejs test.js" },
+  "directories": {
+    "doc": "doc",
+    "test": "test"
+  },
+
+  "npm vs. BOM = Unexpected token": "-*- coding: UTF-8 -*-"
+}
