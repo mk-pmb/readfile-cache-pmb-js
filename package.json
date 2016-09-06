@@ -1,5 +1,5 @@
 { "name": "readfile-cache-pmb",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Cache buffers from fs.readFile, deliver as needed, handy additional encodings.",
   "keywords": [
     "fs", "readfile", "fs.readFile", "read file",

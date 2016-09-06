@@ -12,7 +12,7 @@ function usageDemo(require) {
     cache.readFile('README.md', function (err, text) {
       test.expect(err === null);
       var lines = text.split(/\n/);
-      test.expect(text[0] === '\uFEFF');
+      test.eq(text[0], '\uFEFF');
       test.expect(lines.indexOf('```javascript') > 8);
       test.expect(lines[3].startsWith('Cache buffers from'));
       next();
@@ -21,33 +21,53 @@ function usageDemo(require) {
   }).then(function packageJson1(next) {
 
     cache.readFile('package.json', 'JSON', function (err, data) {
-      test.expect(err === null);
-      test.expect(data.name === "readfile-cache-pmb");
-      test.expect(data.scripts.test === "nodejs test.js");
+      test.eq(err, null);
+      test.eq(data.name, "readfile-cache-pmb");
+      test.eq(data.scripts.test, "nodejs test.js");
       next();
     });
 
   }).then(function fileDescriptorNumber(next) {
 
-    cache.readFile(3, function (err, data) {
-      test.expect(err.message.match(/must be\b[\s\S]* string/i) && true);
-      test.expect(data === undefined);
+    cache.readFile(3, test.expectErrorInvalidFileName(next));
+
+  });
+
+  test.then(function shorthand(next) {
+
+    var readFileC = require('readfile-cache-pmb').rf(),
+      // ^-- create new cache and return a bound-to-it version of its .readFile
+      customFsRead = function (fn, enc, cb) { cb(fn.substr(-4) + '|' + enc); };
+
+    test.eq((typeof readFileC), 'function');
+    test.expect(readFileC.c instanceof ReadFileCache);
+    test.expect(readFileC.c !== cache);    // make sure its _another_ cache
+
+    readFileC.c.fsReadFileFunc = customFsRead;
+
+    readFileC('404.asc', 'ascii', function (err, data) {
+      test.expect((err === '.asc|null') || err);
+      // ^- not '.asc|ascii', because .readFile always requests a buffer
+      //    from the file system function, and handles encoding itself.
+      test.eq(data, undefined);
       next();
     });
 
   });
+
   return cache;
 }
 
 
 var EX = module.exports, pathLib = require('path'), taskQ = [],
-  cache = require('readfile-cache-pmb'),
+  RFCache = require('readfile-cache-pmb'),
   eq = require('assert').deepStrictEqual;
 
 EX.testNames = [
   'readme1',
   'packageJson1',
   'fileDescriptorNumber',
+  'shorthand',
   'real404txt1',
   'custom404txt1',
   'custom404html1',
@@ -55,19 +75,29 @@ EX.testNames = [
   'packageJson2',
 ];
 
+EX.eq = eq;
 EX.expect = eq.bind(null, true);
+
+EX.expectErrorInvalidFileName = function (next) {
+  return function (err, data) {
+    eq(err.message.match(/(must be)\b[\s\S]* string/i)[1], 'must be');
+    eq(data, undefined);
+    next();
+  };
+};
 
 EX.then = function (func) {
   taskQ.push(func);
   return EX;
 };
 
-cache = usageDemo(function (mod) { return this[mod](); }.bind({
-  'readfile-cache-pmb': function () { return cache; },
+EX.cache = usageDemo(function (mod) { return this[mod](); }.bind({
+  'readfile-cache-pmb': function () { return RFCache; },
   './test.js': function () { return EX; },
 }));
 
-cache.debugLog = console.log.bind(console, 'D:');
+EX.cache.debugLog = console.log.bind(console, 'D:');
+EX.rf = EX.cache.readFile.bind(EX.cache);
 
 taskQ.done = [];
 taskQ.next = function () {
@@ -105,11 +135,11 @@ function customFileRead(fn, enc, done) {
 customFileRead['404.txt'] = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xC0, 0xFF, 0xEE];
 
 EX.then(function real404txt1(next) {
-  cache.readFile('404.txt', function (err, data) {
+  EX.rf('404.txt', function (err, data) {
     eq(((err instanceof Error) ? '-ERR' : err), '-ERR');
     eq(data, undefined);
 
-    cache.fsReadFileFunc = customFileRead;
+    EX.cache.fsReadFileFunc = customFileRead;
 
     next();
   });
@@ -117,7 +147,7 @@ EX.then(function real404txt1(next) {
 
 
 EX.then(function custom404txt1(next) {
-  cache.readFile('404.txt', Buffer, function (err, data) {
+  EX.rf('404.txt', Buffer, function (err, data) {
     eq(err, null);
     eq(((data instanceof Buffer) ? 'buffer' : data), 'buffer');
     eq(data.slice(0, 2), new Buffer([0xDE, 0xAD]));
@@ -126,7 +156,7 @@ EX.then(function custom404txt1(next) {
 });
 
 EX.then(function custom404html1(next) {
-  cache.readFile('404.html', Buffer, function (err, data) {
+  EX.rf('404.html', Buffer, function (err, data) {
     eq(((err instanceof Error) ? '-ERR' : err), '-ERR');
     eq(data, undefined);
     next();
@@ -134,7 +164,7 @@ EX.then(function custom404html1(next) {
 });
 
 EX.then(function readme2(next) {
-  cache.readFile('README.md', 'UTF-8-noBOM', function (err, text) {
+  EX.rf('README.md', 'UTF-8-noBOM', function (err, text) {
     eq(err, null);  // it was cached when we used the default file system read
     eq(text[0], '\n');
     eq(text.split(/\n/)[3].match(/buf\w+/)[0], 'buffers');
@@ -143,7 +173,7 @@ EX.then(function readme2(next) {
 });
 
 EX.then(function packageJson2(next) {
-  cache.readFile('package.json', Buffer, function (err, data) {
+  EX.rf('package.json', Buffer, function (err, data) {
     eq(err, null);
     eq(data[0], '{'.charCodeAt(0));
     next();

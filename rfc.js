@@ -6,10 +6,21 @@ var CF, PT, pathLib = require('path'), fs = require('fs');
 
 
 CF = function ReadFileCache() {
-  var self = this;
-  self.cache = {};
+  if (!(this instanceof ReadFileCache)) { return new ReadFileCache(); }
+  var impl = { cache: {} };
+  this.IMPL = function () { return impl; };
 };
 PT = CF.prototype;
+
+
+CF.rf = function () {
+  var cache = new CF(), rf;
+  rf = function readFileWithCache() {
+    return cache.readFile.apply(cache, arguments);
+  };
+  rf.c = cache;
+  return rf;
+};
 
 
 CF.encodeBuffer = function (buf, enc) {
@@ -49,8 +60,8 @@ PT.debugLog = function (msg) { return msg; };
 
 
 PT.serveFromCache = function (filename, encoding, deliver) {
-  var data = this.cache[filename], err = null;
-  if (!(deliver instanceof Function)) {
+  var data = this.IMPL().cache[filename], err = null;
+  if ((typeof deliver) !== 'function') {
     throw new Error("Won't try and read file without a delivery function " +
       "to receive its content! File name: " + filename);
   }
@@ -107,7 +118,7 @@ PT.readFile = function (filename, encoding, deliver) {
 
 PT.saveAndServe = function (filename, encoding, deliver, readErr, buf) {
   if (readErr) { return deliver(readErr); }
-  this.cache[filename] = buf;
+  this.IMPL().cache[filename] = buf;
   buf.lastRead = Date.now();
   if (this.serveFromCache(filename, encoding, deliver)) { return; }
   return deliver(new Error('cache malfunction'));
