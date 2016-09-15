@@ -2,7 +2,7 @@
 /* -*- tab-width: 2 -*- */
 'use strict';
 
-function usageDemo(require) {
+function readmeDemo(require) {
   var test = require('./test.js'),
     ReadFileCache = require('readfile-cache-pmb'),
     cache = new ReadFileCache();
@@ -10,7 +10,7 @@ function usageDemo(require) {
   test.then(function readme1(next) {
 
     cache.readFile('README.md', function (err, text) {
-      test.expect(err === null);
+      test.eq(err, null);
       var lines = text.split(/\n/);
       test.eq(text[0], '\uFEFF');
       test.expect(lines.indexOf('```javascript') > 8);
@@ -49,19 +49,20 @@ function usageDemo(require) {
       test.expect((err === '.asc|null') || err);
       // ^- not '.asc|ascii', because .readFile always requests a buffer
       //    from the file system function, and handles encoding itself.
-      test.eq(data, undefined);
+      test.eq(data, null);
       next();
     });
 
   });
+  // demo end
 
   return cache;
 }
 
 
 var EX = module.exports, pathLib = require('path'), taskQ = [],
-  RFCache = require('readfile-cache-pmb'),
-  eq = require('assert').deepStrictEqual;
+  D = require('lib-demo-util-160404')(module),
+  RFCache = require('readfile-cache-pmb');
 
 EX.testNames = [
   'readme1',
@@ -69,19 +70,31 @@ EX.testNames = [
   'fileDescriptorNumber',
   'shorthand',
   'real404txt1',
-  'custom404txt1',
+  'useCustomFs1',
+  'custom404bin1',
   'custom404html1',
   'readme2',
   'packageJson2',
+  'readSameFileAtSameTime',
 ];
 
-EX.eq = eq;
-EX.expect = eq.bind(null, true);
+EX.eq = function (a, b) {
+  D.result = a;
+  D.expect('===', b);
+
+  try {
+    assert.deepStrictEqual(a, b);
+    return true;
+  } catch (uneq) {
+    uneq.message = uneq.message.replace(/\s+(deepStrictEqual)/, '\n$1');
+    throw uneq;
+  }
+};
 
 EX.expectErrorInvalidFileName = function (next) {
   return function (err, data) {
-    eq(err.message.match(/(must be)\b[\s\S]* string/i)[1], 'must be');
-    eq(data, undefined);
+    EX.eq(err.message.match(/(must be)\b[\s\S]* string/i)[1], 'must be');
+    EX.eq(data, null);
     next();
   };
 };
@@ -91,7 +104,11 @@ EX.then = function (func) {
   return EX;
 };
 
-EX.cache = usageDemo(function (mod) { return this[mod](); }.bind({
+EX.collectArgs = function (dest) {
+  return function () { dest.push(Array.prototype.slice.call(arguments)); };
+};
+
+EX.cache = readmeDemo(function (mod) { return this[mod](); }.bind({
   'readfile-cache-pmb': function () { return RFCache; },
   './test.js': function () { return EX; },
 }));
@@ -119,65 +136,85 @@ process.on('exit', function checkLostCallbacks(retval) {
       taskQ.map(function (func) { return func.name; }));
     process.exit(3);
   }
-  eq(taskQ.done, EX.testNames);
+  EX.eq(taskQ.done, EX.testNames);
+});
+
+
+EX.then(function real404txt1(next) {
+  EX.rf('404.txt', function (err, data) {
+    EX.eq(((err instanceof Error) ? '-ERR' : err), '-ERR');
+    EX.eq(data, null);
+    next();
+  });
 });
 
 
 function customFileRead(fn, enc, done) {
   fn = pathLib.basename(fn);
+  customFileRead.history.push(fn + '|' + enc);
   var data = customFileRead[fn];
-  eq(enc, null);
+  EX.eq(enc, null);
   if (!data) { return done(new Error('404: ' + fn)); }
   // console.dir({ fn: fn, data: data });
-  data = new Buffer(data);
-  return done(null, data);
+  return done(null, Buffer.from(data));
 }
-customFileRead['404.txt'] = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xC0, 0xFF, 0xEE];
-
-EX.then(function real404txt1(next) {
-  EX.rf('404.txt', function (err, data) {
-    eq(((err instanceof Error) ? '-ERR' : err), '-ERR');
-    eq(data, undefined);
-
-    EX.cache.fsReadFileFunc = customFileRead;
-
-    next();
-  });
+customFileRead.history = [];
+customFileRead['404.bin'] = [0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xC0, 0xFF, 0xEE];
+EX.then(function useCustomFs1(next) {
+  EX.cache.fsReadFileFunc = customFileRead;
+  next();
 });
 
 
-EX.then(function custom404txt1(next) {
-  EX.rf('404.txt', Buffer, function (err, data) {
-    eq(err, null);
-    eq(((data instanceof Buffer) ? 'buffer' : data), 'buffer');
-    eq(data.slice(0, 2), new Buffer([0xDE, 0xAD]));
+EX.then(function custom404bin1(next) {
+  EX.rf('404.bin', 'hex', function (err, data) {
+    EX.eq(err, null);
+    EX.eq(data, 'deadbeef' + '00' + 'c0ffee');
     next();
   });
 });
 
 EX.then(function custom404html1(next) {
-  EX.rf('404.html', Buffer, function (err, data) {
-    eq(((err instanceof Error) ? '-ERR' : err), '-ERR');
-    eq(data, undefined);
+  EX.rf('404.html', 'buffer', function (err, data) {
+    EX.eq(((err instanceof Error) ? '-ERR' : err), '-ERR');
+    EX.eq(data, null);
     next();
   });
 });
 
 EX.then(function readme2(next) {
   EX.rf('README.md', 'UTF-8-noBOM', function (err, text) {
-    eq(err, null);  // it was cached when we used the default file system read
-    eq(text[0], '\n');
-    eq(text.split(/\n/)[3].match(/buf\w+/)[0], 'buffers');
+    EX.eq(err, null);
+    // ^-- because it was cached when we used the default file system read
+    EX.eq(text[0], '\n');
+    EX.eq(text.split(/\n/)[3].match(/buf\w+/)[0], 'buffers');
     next();
   });
 });
 
 EX.then(function packageJson2(next) {
-  EX.rf('package.json', Buffer, function (err, data) {
-    eq(err, null);
-    eq(data[0], '{'.charCodeAt(0));
+  EX.rf('package.json', 'buffer', function (err, data) {
+    EX.eq(err, null);
+    EX.eq(data[0], '{'.charCodeAt(0));
     next();
   });
+});
+
+
+
+EX.then(function readSameFileAtSameTime(next) {
+  var fsReads = [], rcv = [];
+  fsReads.collect = EX.collectArgs(fsReads);
+
+  EX.cache.fsReadFileFunc = EX.collectArgs(fsReads);
+
+  rcv.collect = EX.collectArgs(rcv);
+  EX.rf('all@once.txt', 'buffer', rcv.collect);
+  EX.rf('all@once.txt', 'json', rcv.collect);
+  EX.rf('all@once.txt', 'UTF-8', rcv.collect);
+  EX.eq(EX.deepTypes(fsReads), 1);
+
+  setTimeout(next, 10);
 });
 
 

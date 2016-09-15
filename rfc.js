@@ -4,6 +4,11 @@
 
 var CF, PT, pathLib = require('path'), fs = require('fs');
 
+function malf(why, filename) {
+  throw new Error('internal cache malfunction: ' + why +
+    ' for file "' + filename + '"');
+}
+
 
 CF = function ReadFileCache() {
   if (!(this instanceof ReadFileCache)) { return new ReadFileCache(); }
@@ -60,21 +65,30 @@ PT.debugLog = function (msg) { return msg; };
 
 
 PT.serveFromCache = function (filename, encoding, deliver) {
-  var data = this.IMPL().cache[filename], err = null;
+  var cache = this.IMPL().cache, cEntry = cache[filename], data, err;
   if ((typeof deliver) !== 'function') {
-    throw new Error("Won't try and read file without a delivery function " +
-      "to receive its content! File name: " + filename);
+    throw new Error("Won't try and read file without a receiver function " +
+      "for its content! File name: " + filename);
   }
-  if (!data) { return false; }
-  try {
-    data = CF.encodeBuffer(data, encoding);
-  } catch (bufConvertErr) {
-    err = bufConvertErr;
-    data = null;
+  if (!cEntry) {
+    cache[filename] = { lastRead: 0, buf: null, err: null,
+      subscribers: [ { enc: encoding, rcv: deliver } ] };
+    return false;
   }
-  if (!filename) {
-    this.debugLog('serving from cache:', filename,
-      String(err || '(no error)'), String(data).length);
+  if (cEntry.subscribers) {
+    cEntry.subscribers.push({ enc: encoding, rcv: deliver });
+    return true;
+  }
+  err = cEntry.err;
+  data = cEntry.buf;
+  if (!err) {
+    if (!data) { malf('neither error nor data', filename); }
+    try {
+      data = CF.encodeBuffer(data, encoding);
+    } catch (bufConvertErr) {
+      err = bufConvertErr;
+      data = null;
+    }
   }
   setImmediate(function readFileCache_nowServing() { deliver(err, data); });
   return true;
@@ -101,7 +115,7 @@ PT.readFile = function (filename, encoding, deliver) {
     break;
   }
   if ((filename && typeof filename) !== 'string') {
-    return deliver(new Error('Filename must be a non-empty string.'));
+    return deliver(new Error('Filename must be a non-empty string.'), null);
   }
   switch (filename) {
   case '-':
@@ -112,16 +126,40 @@ PT.readFile = function (filename, encoding, deliver) {
   }
   if (this.serveFromCache(filename, encoding, deliver)) { return; }
   return this.fsReadFileFunc(filename, null, this.saveAndServe.bind(this,
-    filename, encoding, deliver));
+    filename));
 };
 
 
-PT.saveAndServe = function (filename, encoding, deliver, readErr, buf) {
-  if (readErr) { return deliver(readErr); }
-  this.IMPL().cache[filename] = buf;
-  buf.lastRead = Date.now();
-  if (this.serveFromCache(filename, encoding, deliver)) { return; }
-  return deliver(new Error('cache malfunction'));
+PT.saveAndServe = function (filename, readErr, buf) {
+  var cEntry = this.IMPL().cache[filename], subscr;
+  if (!cEntry) { malf('no subscribers', filename); }
+  subscr = cEntry.subscribers;
+  delete cEntry.subscribers;
+  cEntry.lastRead = Date.now();
+  if ((!readErr) && (!Buffer.isBuffer(buf))) {
+    readErr = 'File system read reported succeess but instead of a buffer, ' +
+      'it gave ' + String(buf);
+    readErr = new Error(readErr);
+  }
+  if (readErr) {
+    cEntry.err = readErr;
+    cEntry.buf = null;
+  } else {
+    cEntry.err = null;
+    cEntry.buf = buf;
+  }
+  if (!subscr) { malf('no subscribers list', filename); }
+  if (subscr.length < 1) { malf('empty subscribers list', filename); }
+  subscr.forEach(setImmediate.bind(null,
+    this.notifyOneCacheFileSubscriber.bind(this, filename, cEntry)));
+  return;
+};
+
+
+PT.notifyOneCacheFileSubscriber = function (filename, cEntry, sub) {
+  if (cEntry.err) { return sub.rcv(cEntry.err, null); }
+  if (this.serveFromCache(filename, sub.enc, sub.rcv)) { return; }
+  malf('delivery to subscriber failed', filename);
 };
 
 

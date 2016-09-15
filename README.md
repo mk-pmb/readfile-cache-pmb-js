@@ -1,7 +1,12 @@
 ﻿
+<!--#echo json="package.json" key="name" underline="=" -->
 readfile-cache-pmb
-===================
-Cache buffers from fs.readFile, deliver as needed.
+==================
+<!--/#echo -->
+
+<!--#echo json="package.json" key="description" -->
+Cache buffers from fs.readFile, deliver as needed, handy additional encodings.
+<!--/#echo -->
 
   * If an encoding is requested. convert and deliver as string.
     * Supported encodings include `utf-8-no-bom`, `utf8noBOM`,
@@ -17,6 +22,10 @@ Cache buffers from fs.readFile, deliver as needed.
 Usage
 -----
 from [test.js](test.js):
+
+<!--#include file="test.js" start="function readmeDemo(require) {"
+  stop="  // demo end" code="javascript" -->
+<!--#verbatim lncnt="53" -->
 ```javascript
   var test = require('./test.js'),
     ReadFileCache = require('readfile-cache-pmb'),
@@ -25,7 +34,7 @@ from [test.js](test.js):
   test.then(function readme1(next) {
 
     cache.readFile('README.md', function (err, text) {
-      test.expect(err === null);
+      test.eq(err, null);
       var lines = text.split(/\n/);
       test.eq(text[0], '\uFEFF');
       test.expect(lines.indexOf('```javascript') > 8);
@@ -64,7 +73,7 @@ from [test.js](test.js):
       test.expect((err === '.asc|null') || err);
       // ^- not '.asc|ascii', because .readFile always requests a buffer
       //    from the file system function, and handles encoding itself.
-      test.eq(data, undefined);
+      test.eq(data, null);
       next();
     });
 
@@ -72,6 +81,11 @@ from [test.js](test.js):
 ```
 
 
+<!--#toc stop="scan" -->
+
+
 License
 -------
+<!--#echo json="package.json" key=".license" -->
 ISC
+<!--/#echo -->
